@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>全牌組 - 麻將聽牌高手測驗</title>
+    <style>
+        :root { --tile-bg: #fff; --tile-text: #333; --table-green: #1a4a16; }
+        body { font-family: 'PingFang TC', 'Microsoft JhengHei', sans-serif; background-color: #0f260d; color: white; display: flex; flex-direction: column; align-items: center; min-height: 100vh; margin: 0; padding: 20px; }
+        .container { background: var(--table-green); padding: 25px; border-radius: 20px; border: 8px solid #5d3a1a; box-shadow: 0 20px 50px rgba(0,0,0,0.6); text-align: center; width: 95%; max-width: 800px; }
+        .hand { display: flex; justify-content: center; flex-wrap: wrap; gap: 6px; margin: 30px 0; perspective: 500px; }
+        .tile { width: 45px; height: 65px; background: var(--tile-bg); border-radius: 5px; color: var(--tile-text); display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 22px; font-weight: bold; border-bottom: 5px solid #bbb; box-shadow: 2px 2px 5px rgba(0,0,0,0.3); }
+        .tile.man { color: #d32f2f; } /* 萬子紅色 */
+        .tile.tong { color: #1976d2; } /* 筒子藍色 */
+        .tile.tiao { color: #388e3c; } /* 條子綠色 */
+        .tile.zi { color: #4a148c; }   /* 字牌紫色 */
+        .tile-sub { font-size: 12px; margin-top: -2px; }
+        .controls { margin-top: 25px; display: flex; justify-content: center; gap: 15px; }
+        button { padding: 12px 25px; font-size: 18px; cursor: pointer; border: none; border-radius: 50px; font-weight: bold; transition: all 0.2s; box-shadow: 0 4px 0 #888; }
+        button:active { transform: translateY(4px); box-shadow: none; }
+        .btn-gen { background: #ffcc00; color: #333; }
+        .btn-ans { background: #eee; color: #333; }
+        #result { margin-top: 25px; font-size: 24px; color: #ffeb3b; font-weight: bold; height: 35px; text-shadow: 1px 1px 2px #000; }
+    </style>
+</head>
+<body>
+
+    <h1 style="margin-bottom: 10px;">🀄 全牌組：聽牌大挑戰</h1>
+    <p>除了花牌以外的所有牌型。找出這 13 張牌聽什麼？</p>
+
+    <div class="container">
+        <div class="hand" id="hand-display"></div>
+        
+        <div class="controls">
+            <button class="btn-gen" onclick="generateGame()">下一題 (Random)</button>
+            <button class="btn-ans" onclick="showAnswer()">查看解答 (Answer)</button>
+        </div>
+
+        <div id="result"></div>
+    </div>
+
+<script>
+    // 牌值定義：
+    // 11-19: 萬, 21-29: 筒, 31-39: 條
+    // 41:東, 43:南, 45:西, 47:北, 51:中, 53:發, 55:白
+    const ALL_TILES = [
+        11,12,13,14,15,16,17,18,19, // 萬
+        21,22,23,24,25,26,27,28,29, // 筒
+        31,32,33,34,35,36,37,38,39, // 條
+        41,43,45,47,51,53,55        // 字
+    ];
+
+    const NAMES = {
+        11:'一', 12:'二', 13:'三', 14:'四', 15:'五', 16:'六', 17:'七', 18:'八', 19:'九',
+        21:'①', 22:'②', 23:'③', 24:'④', 25:'⑤', 26:'⑥', 27:'⑦', 28:'⑧', 29:'⑨',
+        31:'1', 32:'2', 33:'3', 34:'4', 35:'5', 36:'6', 37:'7', 38:'8', 39:'9',
+        41:'東', 43:'南', 45:'西', 47:'北', 51:'中', 53:'發', 55:'白'
+    };
+
+    let currentHand = [];
+    let currentAnswers = [];
+
+    function getTileClass(val) {
+        if (val < 20) return 'man';
+        if (val < 30) return 'tong';
+        if (val < 40) return 'tiao';
+        return 'zi';
+    }
+
+    function getTileSub(val) {
+        if (val < 20) return '萬';
+        if (val < 30) return '筒';
+        if (val < 40) return '條';
+        return '字';
+    }
+
+    // 核心判斷：拆解刻子與順子
+    function canHu(cards) {
+        if (cards.length === 0) return true;
+        let counts = {};
+        cards.forEach(c => counts[c] = (counts[c] || 0) + 1);
+        
+        let unique = Object.keys(counts).map(Number);
+        for (let card of unique) {
+            if (counts[card] >= 2) { // 嘗試當將
+                let next = [...cards];
+                next.splice(next.indexOf(card), 1);
+                next.splice(next.indexOf(card), 1);
+                if (checkMian(next)) return true;
+            }
+        }
+        return false;
+    }
+
+    function checkMian(cards) {
+        if (cards.length === 0) return true;
+        cards.sort((a, b) => a - b);
+        let first = cards[0];
+
+        // 1. 嘗試組成刻子
+        let countFirst = cards.filter(c => c === first).length;
+        if (countFirst >= 3) {
+            let next = [...cards];
+            next.splice(0, 3);
+            if (checkMian(next)) return true;
+        }
+
+        // 2. 嘗試組成順子 (字牌不能組順子)
+        if (first < 40) { 
+            let idx2 = cards.indexOf(first + 1);
+            let idx3 = cards.indexOf(first + 2);
+            // 確保是同一花色 (例如 19, 20, 21 不成順)
+            if (idx2 !== -1 && idx3 !== -1 && Math.floor(first/10) === Math.floor((first+2)/10)) {
+                let next = [...cards];
+                next.splice(idx3, 1);
+                next.splice(idx2, 1);
+                next.splice(0, 1);
+                if (checkMian(next)) return true;
+            }
+        }
+        return false;
+    }
+
+    function generateGame() {
+        document.getElementById('result').innerText = "";
+        let valid = false;
+        
+        while (!valid) {
+            let pool = [];
+            ALL_TILES.forEach(t => { for(let i=0; i<4; i++) pool.push(t); });
+            
+            let hand = [];
+            for (let i = 0; i < 13; i++) {
+                let idx = Math.floor(Math.random() * pool.length);
+                hand.push(pool.splice(idx, 1)[0]);
+            }
+            hand.sort((a,b) => a-b);
+
+            // 計算聽哪些牌
+            let answers = [];
+            for (let t of ALL_TILES) {
+                // 檢查該牌是否還有剩 (場上最多 4 張)
+                if (hand.filter(c => c === t).length < 4) {
+                    if (canHu([...hand, t].sort((a,b)=>a-b))) {
+                        answers.push(t);
+                    }
+                }
+            }
+
+            // 確保：有聽牌、目前沒胡、聽牌數不要多到太離譜 (增加難度)
+            if (answers.length > 0 && !canHu(hand) && answers.length < 6) {
+                currentHand = hand;
+                currentAnswers = answers;
+                valid = true;
+            }
+        }
+        renderHand();
+    }
+
+    function renderHand() {
+        const display = document.getElementById('hand-display');
+        display.innerHTML = '';
+        currentHand.forEach(t => {
+            const div = document.createElement('div');
+            div.className = `tile ${getTileClass(t)}`;
+            div.innerHTML = `<div>${NAMES[t]}</div><div class="tile-sub">${getTileSub(t)}</div>`;
+            display.appendChild(div);
+        });
+    }
+
+    function showAnswer() {
+        if (currentAnswers.length === 0) return;
+        const ansStrings = currentAnswers.map(a => `${NAMES[a]}${getTileSub(a)}`);
+        document.getElementById('result').innerText = `聽牌：${ansStrings.join('、')}`;
+    }
+
+    generateGame();
+</script>
+</body>
+</html>
